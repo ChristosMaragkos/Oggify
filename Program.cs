@@ -4,40 +4,99 @@ namespace Oggify;
 
 class Program
 {
-    
     static void Main(string[] args)
     {
-        
         Console.WriteLine("Oggify - Convert WAV files to OGG format using FFmpeg");
         Console.WriteLine("--------------------------------------------------");
         Console.WriteLine("This tool converts all WAV files in a specified directory to OGG format using FFmpeg.");
-        Console.WriteLine("Please provide the path to or drag and drop the folder containing the WAV files you would like to convert.");
+        Console.WriteLine("Usage: Oggify.exe <input_directory> [--overwrite] [--skip-existing]");
+        Console.WriteLine();
 
-        string inputDirectory;
-        if (args.Length == 0)
-        {
-            Console.Write("Enter path to input folder: ");
-            inputDirectory = Console.ReadLine()?.Trim('"') ?? "";
-        }
-        else
-        {
-            inputDirectory = args[0];
-        }
-        if (!Directory.Exists(inputDirectory))
-        {
-            Console.WriteLine($"The directory '{inputDirectory}' does not exist.");
-            Console.WriteLine("Please provide a valid directory.");
-            Console.WriteLine("Usage: Oggify.exe <input_directory>");
-        }
+        var (inputDirectory, forceOverwrite, skipIfExists) = ParseInput(args);
 
+        ConvertWavToOgg(inputDirectory, forceOverwrite, skipIfExists);
+
+        Console.WriteLine("All files converted.");
+        Console.WriteLine("Press any key to exit.");
+        Console.ReadKey();
+    }
+
+    static (string inputDirectory, bool forceOverwrite, bool skipIfExists) ParseInput(string[] args)
+    {
+        while (true)
+        {
+            string[] inputArgs;
+
+            if (args.Length == 0)
+            {
+                Console.Write("Enter input folder and optional flags: ");
+                var inputLine = Console.ReadLine()?.Trim() ?? "";
+                inputArgs = inputLine.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            }
+            else
+            {
+                inputArgs = args;
+            }
+
+            if (inputArgs.Length == 0)
+            {
+                Console.WriteLine("No input provided.");
+                args = Array.Empty<string>(); // reset for next loop
+                continue;
+            }
+
+            var inputDirectory = inputArgs[0].Trim('"');
+            bool forceOverwrite = false;
+            bool skipIfExists = false;
+
+            if (inputArgs[0].Equals("help", StringComparison.OrdinalIgnoreCase) ||
+                inputArgs[0].Equals("--help", StringComparison.OrdinalIgnoreCase) ||
+                inputArgs[0].Equals("-h", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("Usage: Oggify.exe <input_directory> [--overwrite] [--skip-existing]");
+                Console.WriteLine("Options:");
+                Console.WriteLine("  --overwrite       Force overwrite existing OGG files.");
+                Console.WriteLine("  --skip-existing   Skip conversion for files that already exist.");
+                args = Array.Empty<string>(); // reset for next loop
+                continue;
+            }
+
+            for (int i = 1; i < inputArgs.Length; i++)
+            {
+                switch (inputArgs[i].ToLower())
+                {
+                    case "--overwrite":
+                        forceOverwrite = true;
+                        break;
+                    case "--skip-existing":
+                        skipIfExists = true;
+                        break;
+                    default:
+                        Console.WriteLine($"Unknown argument: {inputArgs[i]}");
+                        break;
+                }
+            }
+
+            if (!Directory.Exists(inputDirectory))
+            {
+                Console.WriteLine($"The directory '{inputDirectory}' does not exist.");
+                args = Array.Empty<string>(); // trigger retry
+                continue;
+            }
+
+            return (inputDirectory, forceOverwrite, skipIfExists);
+        }
+    }
+
+    static void ConvertWavToOgg(string inputDirectory, bool forceOverwrite, bool skipIfExists)
+    {
         var ffmpegPath = @"C:\Program Files (x86)\FFmpeg for Audacity\ffmpeg.exe";
-        
         var files = Directory.GetFiles(inputDirectory, "*.wav");
 
         if (files.Length == 0)
         {
-            Console.WriteLine($"No files to convert in {inputDirectory}.");
-            Environment.Exit(0);
+            Console.WriteLine($"No WAV files found in {inputDirectory}.");
+            return;
         }
 
         foreach (var inputFile in files)
@@ -45,23 +104,28 @@ class Program
             var fileName = Path.GetFileNameWithoutExtension(inputFile);
             var outputFile = Path.Combine(inputDirectory, $"{fileName}.ogg");
 
-
             if (File.Exists(outputFile))
             {
-                Console.WriteLine($"File '{outputFile}' already exists. Overwrite? (y/n)");
-                var response = Console.ReadKey();
-                Console.WriteLine();
-
-                if (response.KeyChar != 'y' && response.KeyChar != 'Y')
+                if (skipIfExists)
                 {
-                    Console.WriteLine($"Skipping {inputFile}.");
+                    Console.WriteLine($"Skipping {inputFile} (already exists).");
                     continue;
+                }
+
+                if (!forceOverwrite)
+                {
+                    var shouldOverwrite = AskUserConfirmation($"File '{outputFile}' already exists. Overwrite? (y/n)");
+                    if (!shouldOverwrite)
+                    {
+                        Console.WriteLine($"Skipping {inputFile}.");
+                        continue;
+                    }
                 }
 
                 Console.WriteLine($"Overwriting {outputFile}.");
                 File.Delete(outputFile);
             }
-            
+
             var process = new Process
             {
                 StartInfo = new ProcessStartInfo
@@ -74,26 +138,41 @@ class Program
                     CreateNoWindow = true
                 }
             };
-            
+
             try
             {
                 process.Start();
                 process.WaitForExit();
 
                 Console.WriteLine(process.ExitCode == 0
-                    ? $"Converted {inputFile} to {outputFile}"
-                    : $"Error converting {inputFile}: {process.StandardError.ReadToEnd()}");
+                    ? $"Converted {inputFile} → {outputFile}"
+                    : $"Error converting {inputFile}:\n{process.StandardError.ReadToEnd()}");
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"An error occurred while processing {inputFile}: {ex.Message}");
             }
         }
-
-        Console.WriteLine("All files converted.");
-        Console.WriteLine("Press any key to exit.");
-        Console.ReadKey();
-
     }
-    
+
+    static bool AskUserConfirmation(string message)
+    {
+        while (true)
+        {
+            Console.WriteLine(message);
+            var key = Console.ReadKey();
+            Console.WriteLine();
+
+            switch (key.KeyChar)
+            {
+                case 'y' or 'Y':
+                    return true;
+                case 'n' or 'N':
+                    return false;
+                default:
+                    Console.WriteLine("Please enter 'y' or 'n'.");
+                    break;
+            }
+        }
+    }
 }
