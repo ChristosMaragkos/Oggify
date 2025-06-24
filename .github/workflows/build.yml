@@ -1,0 +1,40 @@
+﻿name: Build and Release
+
+on:
+  release:
+    types: [created]
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    env:
+      CONFIGURATION: Release
+      RUNTIME: win-x64
+      DOTNET_VERSION: '8.0.x'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Publish self-contained build
+        run: dotnet publish -c ${{ env.CONFIGURATION }} -r ${{ env.RUNTIME }} --self-contained true --output publish
+
+      - name: Create zip release
+        run: |
+          powershell Compress-Archive -Path publish\* -DestinationPath Oggify-${{ github.ref_name }}.zip
+
+      - name: Upload zip to release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: Oggify-${{ github.ref_name }}.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
