@@ -26,11 +26,11 @@ jobs:
 
       - name: Archive publish output
         run: |
-          powershell Compress-Archive -Path publish_output/* -DestinationPath output.zip
+          powershell Compress-Archive -Path publish_output/* -DestinationPath Oggify.zip
 
       - name: Upload release asset
         uses: softprops/action-gh-release@v1
         with:
-          files: output.zip
+          files: Oggify.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
