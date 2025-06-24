@@ -131,7 +131,7 @@ class Program
                 inputArgs[0].Equals("--help", StringComparison.OrdinalIgnoreCase) ||
                 inputArgs[0].Equals("-h", StringComparison.OrdinalIgnoreCase))
             {
-                Console.WriteLine("Usage: Oggify.exe <input_directory> [--overwrite] [--skip-existing]");
+                Console.WriteLine("Usage: Oggify.exe <input_directory>");
                 Console.WriteLine("Options:");
                 Console.WriteLine("  --overwrite       Force overwrite existing OGG files.");
                 Console.WriteLine("  --skip-existing   Skip conversion for files that already exist.");
