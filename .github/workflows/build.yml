@@ -1,28 +1,30 @@
-﻿name: Build and Release
+﻿name: Release Build
 
 on:
   release:
-    types: [created]
+    types: [published]
 
 jobs:
   build:
     runs-on: windows-latest
 
-    env:
-      CONFIGURATION: Release
-      RUNTIME: win-x64
-      DOTNET_VERSION: '8.0.x'
-
     steps:
-    - name: Publish self-contained build
-      run: dotnet publish -c ${{ env.CONFIGURATION }} -r ${{ env.RUNTIME }} --self-contained true --output ./build/publish
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-    - name: Copy extras
-      run: |
-        cp README.md build/publish/
-        cp LICENSE build/publish/
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
 
-    - name: Zip published files
-      working-directory: ./build/publish
-      run: |
-        powershell Compress-Archive -Path * -DestinationPath ../../Oggify-${{ github.ref_name }}.zip
+      - name: Publish project
+        run: dotnet publish Oggify/Oggify.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true --output publish
+
+      - name: Create release zip
+        run: |
+          Compress-Archive -Path publish/* -DestinationPath Oggify-win-x64.zip
+
+      - name: Upload zip to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: Oggify-win-x64.zip
