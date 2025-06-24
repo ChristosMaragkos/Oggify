@@ -7,18 +7,23 @@ class Program
     static void Main(string[] args)
     {
         
-        Console.WriteLine("Oggify - Convert WAV files to OGG format using FFmpeg");
+        Console.WriteLine("Oggify - Convert WAV (or MP3) files to OGG format using FFmpeg");
         Console.WriteLine("--------------------------------------------------");
-        Console.WriteLine("This tool converts all WAV files in a specified directory to OGG format using FFmpeg.");
-        Console.WriteLine("Usage: Oggify.exe <input_directory> [--overwrite] [--skip-existing] [--recursive] [--replace]");
+        Console.WriteLine("This tool converts all WAV or MP3 files in a specified directory to OGG format using FFmpeg.");
+        Console.WriteLine("Usage: Oggify.exe <input_directory> [--overwrite] [--skip-existing] [--recursive] [--replace] [--from-mp3]");
         Console.WriteLine("Alternatively: ffmpeg <path_to_ffmpeg.exe> to change the FFmpeg path.");
         Console.WriteLine();
 
         var ffmpegPath = ResolveFfmpegPath(args);
 
-        var (inputDirectory, forceOverwrite, skipIfExists, recursive, deleteWavAfterConversion) = ParseInput(args);
+        var (inputDirectory, forceOverwrite, 
+            skipIfExists, recursive, 
+            deleteWavAfterConversion, inputExtension) = ParseInput(args, ref ffmpegPath);
 
-        ConvertWavToOgg(inputDirectory, forceOverwrite, skipIfExists, recursive, deleteWavAfterConversion, ffmpegPath);
+        ConvertWavOrMp3ToOgg(inputDirectory, forceOverwrite, 
+            skipIfExists, recursive, 
+            deleteWavAfterConversion, ffmpegPath,
+            inputExtension);
 
         Console.WriteLine("All files converted.");
         Console.WriteLine("Press any key to exit.");
@@ -86,7 +91,10 @@ class Program
         return ffmpegPath;
     }
 
-    static (string inputDirectory, bool forceOverwrite, bool skipIfExists, bool recursive, bool deleteWavAfterConversion) ParseInput(string[] args)
+    static (string inputDirectory, bool forceOverwrite, 
+        bool skipIfExists, bool recursive, 
+        bool deleteWavAfterConversion, string inputExtension) 
+        ParseInput(string[] args, ref string ffmpegPath)
     {
         while (true)
         {
@@ -115,6 +123,7 @@ class Program
             var skipIfExists = false;
             var recursive = false;
             var deleteWavAfterConversion = false;
+            var inputExtension = "*.wav";
 
             var invalidArgs = false;
 
@@ -128,7 +137,35 @@ class Program
                 Console.WriteLine("  --skip-existing   Skip conversion for files that already exist.");
                 Console.WriteLine("  --recursive       Process files in subdirectories.");
                 Console.WriteLine("  --replace         Delete the original WAV files after conversion.");
+                Console.WriteLine("  --from-mp3        Convert MP3 files instead of WAV files.");
+                Console.WriteLine("  ffmpeg <path_to_ffmpeg.exe> to change the FFmpeg path.");
                 args = Array.Empty<string>(); // reset for next loop
+                continue;
+            }
+            
+            if (inputArgs[0].Equals("ffmpeg", StringComparison.OrdinalIgnoreCase))
+            {
+                if (inputArgs.Length < 2)
+                {
+                    Console.WriteLine("Usage: ffmpeg <path_to_ffmpeg.exe>");
+                    args = Array.Empty<string>();
+                    continue;
+                }
+
+                var possiblePath = inputArgs[1].Trim('"');
+
+                if (File.Exists(possiblePath))
+                {
+                    ffmpegPath = possiblePath;
+                    File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ffmpeg_path.txt"), ffmpegPath);
+                    Console.WriteLine($"[ffmpeg path updated] -> {ffmpegPath}");
+                }
+                else
+                {
+                    Console.WriteLine($"Provided ffmpeg path '{possiblePath}' does not exist.");
+                }
+
+                args = Array.Empty<string>();
                 continue;
             }
 
@@ -147,6 +184,9 @@ class Program
                         break;
                     case "--replace":
                         deleteWavAfterConversion = true;
+                        break;
+                    case "--from-mp3":
+                        inputExtension = "*.mp3";
                         break;
                     default:
                         Console.WriteLine($"Unknown argument: {inputArgs[i]}");
@@ -170,14 +210,14 @@ class Program
             }
 
             if (Directory.Exists(inputDirectory))
-                return (inputDirectory, forceOverwrite, skipIfExists, recursive, deleteWavAfterConversion);
+                return (inputDirectory, forceOverwrite, skipIfExists, recursive, deleteWavAfterConversion, inputExtension);
             Console.WriteLine($"The directory '{inputDirectory}' does not exist.");
             args = Array.Empty<string>(); // trigger retry
         }
     }
 
-    static void ConvertWavToOgg(string inputDirectory, bool forceOverwrite, bool skipIfExists, 
-        bool recursive, bool deleteWavAfterConversion, string ffmpegPath)
+    static void ConvertWavOrMp3ToOgg(string inputDirectory, bool forceOverwrite, bool skipIfExists, 
+        bool recursive, bool deleteWavAfterConversion, string ffmpegPath, string inputExtension)
     {
         
         if (!File.Exists(ffmpegPath))
@@ -186,12 +226,12 @@ class Program
             return;
         }
         
-        var files = Directory.GetFiles(inputDirectory, "*.wav",
+        var files = Directory.GetFiles(inputDirectory, inputExtension,
             recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly);
 
         if (files.Length == 0)
         {
-            Console.WriteLine($"No WAV files found in {inputDirectory}.");
+            Console.WriteLine($"No WAV/MP3 files found in {inputDirectory}.");
             Console.WriteLine(!recursive
                 ? "(Consider using the --recursive flag to search subdirectories.)"
                 : "(Including subdirectories).");
@@ -201,7 +241,7 @@ class Program
         foreach (var inputFile in files)
         {
             var fileName = Path.GetFileNameWithoutExtension(inputFile);
-            var outputFile = Path.Combine(inputDirectory, $"{fileName}.ogg");
+            var outputFile = Path.Combine(Path.GetDirectoryName(inputFile)!, $"{fileName}.ogg");
 
             if (File.Exists(outputFile))
             {
@@ -252,11 +292,11 @@ class Program
                         try
                         {
                             File.Delete(inputFile);
-                            Console.WriteLine($"Deleted original WAV: {inputFile}");
+                            Console.WriteLine($"Deleted original audio file: {inputFile}");
                         }
                         catch (Exception ex)
                         {
-                            Console.WriteLine($"Failed to delete WAV file {inputFile}: {ex.Message}");
+                            Console.WriteLine($"Failed to delete original audio file {inputFile}: {ex.Message}");
                         }
                     }
                 }
