@@ -14,27 +14,15 @@ jobs:
       DOTNET_VERSION: '8.0.x'
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v3
+    - name: Publish self-contained build
+      run: dotnet publish -c ${{ env.CONFIGURATION }} -r ${{ env.RUNTIME }} --self-contained true --output ./build/publish
 
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v3
-        with:
-          dotnet-version: ${{ env.DOTNET_VERSION }}
+    - name: Copy extras
+      run: |
+        cp README.md build/publish/
+        cp LICENSE build/publish/
 
-      - name: Restore dependencies
-        run: dotnet restore
-
-      - name: Publish self-contained build
-        run: dotnet publish -c ${{ env.CONFIGURATION }} -r ${{ env.RUNTIME }} --self-contained true --output publish
-
-      - name: Create zip release
-        run: |
-          powershell Compress-Archive -Path publish\* -DestinationPath Oggify-${{ github.ref_name }}.zip
-
-      - name: Upload zip to release
-        uses: softprops/action-gh-release@v1
-        with:
-          files: Oggify-${{ github.ref_name }}.zip
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Zip published files
+      working-directory: ./build/publish
+      run: |
+        powershell Compress-Archive -Path * -DestinationPath ../../Oggify-${{ github.ref_name }}.zip
