@@ -35,7 +35,7 @@ On first run, the app will ask for your `FFmpeg` executable path. This is saved 
 <sup><sub>If you want to change this later, you can do it via the ffmpeg (path) command!</sub></sup>
 
 ## Build
-Building Oggify requires [.NET 8 SDK](https://dotnet.microsoft.com/en-us/download) or later.
+No need to build Oggify from the source code! Just go to [Releases](https://github.com/WhiteTowerGames/Oggify/releases) and download the latest version from there!
 
 ## Other
 Pull requests **highly welcome**! I created Oggify to make it part of my gamedev workflow, as I found myself constantly opening up Audacity for a single export at a time.
