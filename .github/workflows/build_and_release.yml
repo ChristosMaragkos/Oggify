@@ -1,0 +1,36 @@
+﻿name: Build and Release Oggify
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'  # Trigger μόνο σε version tags, πχ v1.0.0
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: '9.0'  # Βάλε την έκδοση που χρησιμοποιείς
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Publish project
+        run: dotnet publish -c Release -o publish_output
+
+      - name: Archive publish output
+        run: |
+          powershell Compress-Archive -Path publish_output/* -DestinationPath output.zip
+
+      - name: Upload release asset
+        uses: softprops/action-gh-release@v1
+        with:
+          files: output.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
