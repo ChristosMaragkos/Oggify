@@ -6,7 +6,6 @@ Oggify is a lightweight command-line tool for batch converting `.wav` or `.mp3` 
 - Recursive subdirectory support
 - Optionally delete original files after conversion
 - Saves FFmpeg path on first launch
-- Cross-platform (Windows/Linux/Mac) via .NET 8+
 
 ## Usage
 ```sh
