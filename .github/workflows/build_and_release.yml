@@ -3,7 +3,7 @@
 on:
   push:
     tags:
-      - 'v*.*.*'  # Trigger μόνο σε version tags, πχ v1.0.0
+      - 'v*.*.*'
 
 jobs:
   build:
@@ -16,7 +16,7 @@ jobs:
       - name: Setup .NET SDK
         uses: actions/setup-dotnet@v3
         with:
-          dotnet-version: '9.0'  # Βάλε την έκδοση που χρησιμοποιείς
+          dotnet-version: '9.0'
 
       - name: Restore dependencies
         run: dotnet restore
