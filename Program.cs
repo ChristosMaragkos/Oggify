@@ -34,26 +34,24 @@ class Program
     {
         
         string? ffmpegPath = null;
-        string configFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ffmpeg_path.txt");
+        var configFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ffmpeg_path.txt");
         
         // 1. Override via CLI args
-        for (int i = 0; i < args.Length - 1; i++)
+        for (var i = 0; i < args.Length - 1; i++)
         {
-            if (args[i].ToLower() == "ffmpeg")
+            if (!args[i].Equals("ffmpeg", StringComparison.CurrentCultureIgnoreCase)) continue;
+            var possiblePath = args[i + 1].Trim('"');
+            if (File.Exists(possiblePath))
             {
-                var possiblePath = args[i + 1].Trim('"');
-                if (File.Exists(possiblePath))
-                {
-                    ffmpegPath = possiblePath;
-                    File.WriteAllText(configFile, ffmpegPath);
-                    Console.WriteLine($"[ffmpeg path updated] -> {ffmpegPath}");
-                    break;
-                }
-                else
-                {
-                    Console.WriteLine($"Provided ffmpeg path '{possiblePath}' does not exist.");
-                    Environment.Exit(1);
-                }
+                ffmpegPath = possiblePath;
+                File.WriteAllText(configFile, ffmpegPath);
+                Console.WriteLine($"[ffmpeg path updated] -> {ffmpegPath}");
+                break;
+            }
+            else
+            {
+                Console.WriteLine($"Provided ffmpeg path '{possiblePath}' does not exist.");
+                Environment.Exit(1);
             }
         }
 
@@ -71,7 +69,7 @@ class Program
             }
         }
 
-// 3. Ask user if still not resolved
+        // 3. Ask user if still not resolved
         while (ffmpegPath == null || !File.Exists(ffmpegPath))
         {
             Console.Write("Enter path to ffmpeg.exe: ");
