@@ -1,231 +1,223 @@
 ﻿using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
+using CommandLine;
+using JetBrains.Annotations;
 
 namespace Oggify;
 
-class Program
+[UsedImplicitly]
+internal class Program
 {
-    static void Main(string[] args)
+    
+    [Verb("convert", isDefault: true, HelpText = "Convert WAV or MP3 files to OGG format.")]
+    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Local")]
+    [UsedImplicitly]
+    private class ConvertOptions
     {
-        
-        Console.WriteLine("Oggify - Convert WAV (or MP3) files to OGG format using FFmpeg");
-        Console.WriteLine("--------------------------------------------------");
-        Console.WriteLine("This tool converts all WAV or MP3 files in a specified directory to OGG format using FFmpeg.");
-        Console.WriteLine("Usage: Oggify.exe <input_directory> [--overwrite] [--skip-existing] [--recursive] [--replace] [--from-mp3]");
-        Console.WriteLine("Alternatively: ffmpeg <path_to_ffmpeg.exe> to change the FFmpeg path.");
-        Console.WriteLine();
+        [Option("overwrite", HelpText = "Force overwrite existing OGG files.", SetName = "overwrite")]
+        public bool Overwrite { get; set; }
 
-        var ffmpegPath = ResolveFfmpegPath(args);
+        [Option("skip-existing", HelpText = "Skip conversion for files that already exist.", SetName = "overwrite")]
+        public bool SkipExisting { get; set; }
 
-        var (inputDirectory, forceOverwrite, 
-            skipIfExists, recursive, 
-            deleteWavAfterConversion, inputExtension) = ParseInput(args, ref ffmpegPath);
+        [Option("recursive", HelpText = "Process files in subdirectories.")]
+        public bool Recursive { get; set; }
 
-        ConvertWavOrMp3ToOgg(inputDirectory, forceOverwrite, 
-            skipIfExists, recursive, 
-            deleteWavAfterConversion, ffmpegPath,
-            inputExtension);
+        [Option("replace", HelpText = "Delete the original WAV or MP3 files after conversion.")]
+        public bool Replace { get; set; }
 
-        Console.WriteLine("All files converted.");
-        Console.WriteLine("Press any key to exit.");
-        Console.ReadKey();
+        [Option("from-mp3", HelpText = "Convert MP3 files instead of WAV files.")]
+        public bool FromMp3 { get; set; }
+
+        [Option("ffmpeg", HelpText = "Path to ffmpeg.exe.")]
+        public string? FfmpegPath { get; set; }
+
+        [Value(0, MetaName = "input_directory", HelpText = "Input directory containing WAV or MP3 files.")]
+        public string? InputDirectory { get; set; }
     }
 
-    static string ResolveFfmpegPath(string[] args)
+    [Verb("ffmpeg", HelpText = "Set or show the path to ffmpeg.exe.")]
+    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Local")]
+    [UsedImplicitly]
+    private class FfmpegOptions
     {
-        
-        string? ffmpegPath = null;
-        string configFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ffmpeg_path.txt");
-        
-        // 1. Override via CLI args
-        for (int i = 0; i < args.Length - 1; i++)
+        [Value(0, MetaName = "ffmpeg_path", HelpText = "Path to ffmpeg.exe (leave empty to show current).")]
+        public string? FfmpegPath { get; set; }
+    }
+
+    private static int Main(string[] args)
+    {
+        Console.WriteLine("--------------------------------------------------");
+        Console.WriteLine(
+            "This tool converts all WAV or MP3 files in a specified directory to OGG format using FFmpeg.");
+        Console.WriteLine("Usage:");
+        Console.WriteLine(
+            "  Oggify.exe <input_directory> [--overwrite] [--skip-existing] [--recursive] [--replace] [--from-mp3]");
+        Console.WriteLine("  Oggify.exe ffmpeg [<path_to_ffmpeg.exe>]");
+        Console.WriteLine();
+
+        // If no command-line args, start command prompt loop.
+        // Otherwise, parse command-line args as a one-off command.
+        if (args.Length != 0) return ParseAndExecute(args);
+        InteractiveCommandLoop();
+        return 0;
+    }
+
+    private static void InteractiveCommandLoop()
+    {
+        while (true)
         {
-            if (args[i].ToLower() == "ffmpeg")
+            Console.Write("Oggify> ");
+            var input = Console.ReadLine();
+            if (string.IsNullOrWhiteSpace(input))
+                continue;
+
+            if (input.Trim().Equals("exit", StringComparison.OrdinalIgnoreCase) ||
+                input.Trim().Equals("quit", StringComparison.OrdinalIgnoreCase))
+                break;
+
+            // Split input into args (simple split, does not handle quotes)
+            var args = ParseArgs(input);
+
+            if (args.Length == 0)
+                continue;
+
+            var exitCode = ParseAndExecute(args);
+            if (exitCode != 0)
             {
-                var possiblePath = args[i + 1].Trim('"');
-                if (File.Exists(possiblePath))
-                {
-                    ffmpegPath = possiblePath;
-                    File.WriteAllText(configFile, ffmpegPath);
-                    Console.WriteLine($"[ffmpeg path updated] -> {ffmpegPath}");
-                    break;
-                }
-                else
-                {
-                    Console.WriteLine($"Provided ffmpeg path '{possiblePath}' does not exist.");
-                    Environment.Exit(1);
-                }
+                Console.WriteLine($"Command exited with code {exitCode}.");
             }
         }
+    }
 
-// 2. Load from config if not already set
-        if (ffmpegPath == null && File.Exists(configFile))
+    static int ParseAndExecute(string[] args)
+    {
+        return Parser.Default.ParseArguments<ConvertOptions, FfmpegOptions>(args)
+            .MapResult(
+                (ConvertOptions opts) => RunConvert(opts),
+                (FfmpegOptions opts) => RunFfmpeg(opts),
+                _ =>
+                {
+                    // If no verb matched, show usage.
+                    Console.WriteLine(
+                        "Type 'convert <input_directory> [options]' to convert files, or 'ffmpeg [<ffmpeg_path>]' to manage ffmpeg path.\n" +
+                        "Type 'exit' to quit."
+                    );
+                    return 1;
+                });
+    }
+
+    private static int RunConvert(ConvertOptions opts)
+    {
+        while (string.IsNullOrWhiteSpace(opts.InputDirectory))
+        {
+            Console.Write("Enter input directory: ");
+            var dir = Console.ReadLine();
+            if (!string.IsNullOrWhiteSpace(dir))
+                opts.InputDirectory = dir.Trim();
+        }
+
+        if (opts is { SkipExisting: true, Overwrite: true })
+        {
+            Console.WriteLine("Cannot use both --overwrite and --skip-existing flags together. Please choose one.");
+            return 1;
+        }
+
+        if (!Directory.Exists(opts.InputDirectory))
+        {
+            Console.WriteLine($"The directory '{opts.InputDirectory}' does not exist.");
+            return 1;
+        }
+
+        var ffmpegPath = ResolveFfmpegPath(opts.FfmpegPath);
+
+        var inputExtension = opts.FromMp3 ? "*.mp3" : "*.wav";
+
+        ConvertWavOrMp3ToOgg(
+            opts.InputDirectory,
+            opts.Overwrite,
+            opts.SkipExisting,
+            opts.Recursive,
+            opts.Replace,
+            ffmpegPath,
+            inputExtension
+        );
+
+        Console.WriteLine("All files converted.");
+        return 0;
+    }
+
+    private static int RunFfmpeg(FfmpegOptions opts)
+    {
+        var configFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ffmpeg_path.txt");
+        if (!string.IsNullOrWhiteSpace(opts.FfmpegPath))
+        {
+            if (File.Exists(opts.FfmpegPath))
+            {
+                File.WriteAllText(configFile, opts.FfmpegPath);
+                Console.WriteLine($"[ffmpeg path updated] -> {opts.FfmpegPath}");
+                return 0;
+            }
+
+            Console.WriteLine($"Provided ffmpeg path '{opts.FfmpegPath}' does not exist.");
+            return 1;
+        }
+
+        Console.WriteLine(File.Exists(configFile)
+            ? $"Current ffmpeg path: {File.ReadAllText(configFile)}"
+            : "No ffmpeg path is set.");
+        return 0;
+    }
+
+    private static string ResolveFfmpegPath(string? cliFfmpegPath)
+    {
+        var configFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ffmpeg_path.txt");
+
+        // 1. CLI override
+        if (!string.IsNullOrEmpty(cliFfmpegPath) && File.Exists(cliFfmpegPath))
+        {
+            File.WriteAllText(configFile, cliFfmpegPath);
+            Console.WriteLine($"[ffmpeg path updated] -> {cliFfmpegPath}");
+            return cliFfmpegPath;
+        }
+
+        // 2. Load from config
+        if (File.Exists(configFile))
         {
             var savedPath = File.ReadAllText(configFile).Trim();
             if (File.Exists(savedPath))
             {
-                ffmpegPath = savedPath;
+                return savedPath;
             }
-            else
-            {
-                Console.WriteLine("Saved ffmpeg path is invalid.");
-            }
+
+            Console.WriteLine("Saved ffmpeg path is invalid.");
         }
 
-// 3. Ask user if still not resolved
-        while (ffmpegPath == null || !File.Exists(ffmpegPath))
+        // 3. Ask user
+        while (true)
         {
             Console.Write("Enter path to ffmpeg.exe: ");
             var userInput = Console.ReadLine()?.Trim('"');
-            if (File.Exists(userInput))
+            if (!string.IsNullOrEmpty(userInput) && File.Exists(userInput))
             {
+                File.WriteAllText(configFile, userInput);
                 Console.WriteLine($"[ffmpeg path set] -> {userInput}");
-                ffmpegPath = userInput;
-                File.WriteAllText(configFile, ffmpegPath);
-            }
-            else
-            {
-                Console.WriteLine("Invalid path. Try again.");
-            }
-        }
-        
-        return ffmpegPath;
-    }
-
-    static (string inputDirectory, bool forceOverwrite, 
-        bool skipIfExists, bool recursive, 
-        bool deleteWavAfterConversion, string inputExtension) 
-        ParseInput(string[] args, ref string ffmpegPath)
-    {
-        while (true)
-        {
-            string[] inputArgs;
-
-            if (args.Length == 0)
-            {
-                Console.Write("Enter input folder and optional flags: ");
-                var inputLine = Console.ReadLine()?.Trim() ?? "";
-                inputArgs = inputLine.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            }
-            else
-            {
-                inputArgs = args;
+                return userInput;
             }
 
-            if (inputArgs.Length == 0)
-            {
-                Console.WriteLine("No input provided.");
-                args = Array.Empty<string>(); // reset for next loop
-                continue;
-            }
-
-            var inputDirectory = inputArgs[0].Trim('"');
-            var forceOverwrite = false;
-            var skipIfExists = false;
-            var recursive = false;
-            var deleteWavAfterConversion = false;
-            var inputExtension = "*.wav";
-
-            var invalidArgs = false;
-
-            if (inputArgs[0].Equals("help", StringComparison.OrdinalIgnoreCase) ||
-                inputArgs[0].Equals("--help", StringComparison.OrdinalIgnoreCase) ||
-                inputArgs[0].Equals("-h", StringComparison.OrdinalIgnoreCase))
-            {
-                Console.WriteLine("Usage: Oggify.exe <input_directory>");
-                Console.WriteLine("Options:");
-                Console.WriteLine("  --overwrite       Force overwrite existing OGG files.");
-                Console.WriteLine("  --skip-existing   Skip conversion for files that already exist.");
-                Console.WriteLine("  --recursive       Process files in subdirectories.");
-                Console.WriteLine("  --replace         Delete the original WAV files after conversion.");
-                Console.WriteLine("  --from-mp3        Convert MP3 files instead of WAV files.");
-                Console.WriteLine("  ffmpeg <path_to_ffmpeg.exe> to change the FFmpeg path.");
-                args = Array.Empty<string>(); // reset for next loop
-                continue;
-            }
-            
-            if (inputArgs[0].Equals("ffmpeg", StringComparison.OrdinalIgnoreCase))
-            {
-                if (inputArgs.Length < 2)
-                {
-                    Console.WriteLine("Usage: ffmpeg <path_to_ffmpeg.exe>");
-                    args = Array.Empty<string>();
-                    continue;
-                }
-
-                var possiblePath = inputArgs[1].Trim('"');
-
-                if (File.Exists(possiblePath))
-                {
-                    ffmpegPath = possiblePath;
-                    File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ffmpeg_path.txt"), ffmpegPath);
-                    Console.WriteLine($"[ffmpeg path updated] -> {ffmpegPath}");
-                }
-                else
-                {
-                    Console.WriteLine($"Provided ffmpeg path '{possiblePath}' does not exist.");
-                }
-
-                args = Array.Empty<string>();
-                continue;
-            }
-
-            for (int i = 1; i < inputArgs.Length; i++)
-            {
-                switch (inputArgs[i].ToLower())
-                {
-                    case "--overwrite":
-                        forceOverwrite = true;
-                        break;
-                    case "--skip-existing":
-                        skipIfExists = true;
-                        break;
-                    case "--recursive":
-                        recursive = true;
-                        break;
-                    case "--replace":
-                        deleteWavAfterConversion = true;
-                        break;
-                    case "--from-mp3":
-                        inputExtension = "*.mp3";
-                        break;
-                    default:
-                        Console.WriteLine($"Unknown argument: {inputArgs[i]}");
-                        invalidArgs = true;
-                        break;
-                }
-            }
-            
-            if (invalidArgs)
-            {
-                Console.WriteLine("Use --help for usage.");
-                args = Array.Empty<string>(); // reset for next loop
-                continue;
-            }
-            
-            if (skipIfExists && forceOverwrite)
-            {
-                Console.WriteLine("Cannot use both --overwrite and --skip-existing flags together. Please choose one.");
-                args = Array.Empty<string>(); // trigger retry
-                continue;
-            }
-
-            if (Directory.Exists(inputDirectory))
-                return (inputDirectory, forceOverwrite, skipIfExists, recursive, deleteWavAfterConversion, inputExtension);
-            Console.WriteLine($"The directory '{inputDirectory}' does not exist.");
-            args = Array.Empty<string>(); // trigger retry
+            Console.WriteLine("Invalid path. Try again.");
         }
     }
 
-    static void ConvertWavOrMp3ToOgg(string inputDirectory, bool forceOverwrite, bool skipIfExists, 
+    private static void ConvertWavOrMp3ToOgg(string inputDirectory, bool forceOverwrite, bool skipIfExists,
         bool recursive, bool deleteWavAfterConversion, string ffmpegPath, string inputExtension)
     {
-        
         if (!File.Exists(ffmpegPath))
         {
             Console.WriteLine($"FFmpeg not found at path: {ffmpegPath}");
             return;
         }
-        
+
         var files = Directory.GetFiles(inputDirectory, inputExtension,
             recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly);
 
@@ -312,7 +304,7 @@ class Program
         }
     }
 
-    static bool AskUserConfirmation(string message)
+    private static bool AskUserConfirmation(string message)
     {
         while (true)
         {
@@ -322,14 +314,48 @@ class Program
 
             switch (key.KeyChar)
             {
-                case 'y' or 'Y':
+                case 'y':
+                case 'Y':
                     return true;
-                case 'n' or 'N':
+                case 'n':
+                case 'N':
                     return false;
                 default:
                     Console.WriteLine("Please enter 'y' or 'n'.");
                     break;
             }
         }
+    }
+
+    /// <summary>
+    /// Split command-line input into arguments, handling quoted strings.
+    /// </summary>
+    private static string[] ParseArgs(string input)
+    {
+        var args = new List<string>();
+        var inQuotes = false;
+        var current = new System.Text.StringBuilder();
+
+        foreach (var c in input)
+        {
+            if (c == '"')
+            {
+                inQuotes = !inQuotes;
+            }
+            else if (char.IsWhiteSpace(c) && !inQuotes)
+            {
+                if (current.Length <= 0) continue;
+                args.Add(current.ToString());
+                current.Clear();
+            }
+            else
+            {
+                current.Append(c);
+            }
+        }
+        if (current.Length > 0)
+            args.Add(current.ToString());
+
+        return args.ToArray();
     }
 }
